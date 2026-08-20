@@ -41,7 +41,7 @@ th{background:#f6ead7;color:#684b20;font-size:13px}td{font-size:14px}.tag{displa
 <p class="small">Перед публикацией рекомендуется изменить <b>ADMIN_PIN</b>. Для общей базы подключите Google Apps Script по инструкции в <b>rsvp-backend.html</b>.</p>
 </main>
 <script>
-const ADMIN_PIN="8080", RSVP_API_URL="https://script.google.com/macros/s/AKfycbyjIPnZtxYflWP0cpAZXhdiKssa1octhHGKxZuhWR-aOjwkT8cB3AwGFHN0lVDo4aBT/exec";
+const ADMIN_PIN="8080", RSVP_API_URL="https://script.google.com/macros/s/AKfycbxhQ-lBmGezcntHx-H39bzk-48jGMmKyR0Kms6w3iiH9vC6PMhqFQpI6ui9sOnB_eNG/exec";
 const API=RSVP_API_URL&&!RSVP_API_URL.includes("PASTE_GOOGLE");let entries=[];
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
