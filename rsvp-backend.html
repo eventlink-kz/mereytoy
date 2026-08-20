@@ -1,0 +1,57 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Подключение RSVP</title><style>body{margin:0;background:#eee7da;color:#30372f;font-family:Arial,sans-serif}main{max-width:900px;margin:auto;padding:32px 18px 60px}
+h1,h2{color:#79541f}.box{background:#fffaf1;border:1px solid #ddc9a7;padding:18px;margin:15px 0;line-height:1.45}pre{white-space:pre-wrap;word-break:break-word;background:#24211d;color:#f7eee0;padding:16px;overflow:auto;font-size:13px;line-height:1.45}
+code{background:#eee3d1;padding:2px 4px}li{margin:8px 0;line-height:1.45}</style></head><body><main>
+<h1>RSVP — подключение общей базы</h1><div class="box">Сайт уже работает локально. Чтобы ответы со всех телефонов попадали в одну админку, подключите бесплатную Google Таблицу через Apps Script.</div>
+<h2>1. Google Таблица</h2><ol><li>Создайте пустую Google Таблицу.</li><li>Откройте <b>Расширения → Apps Script</b>.</li><li>Вставьте код:</li></ol>
+<pre>const SHEET_NAME = &#x27;RSVP&#x27;;
+const ADMIN_KEY = &#x27;8080&#x27;;
+
+function doGet(e) {
+  if (String(e.parameter.action || &#x27;&#x27;) !== &#x27;list&#x27;) return json({ok:false,error:&#x27;Unknown action&#x27;});
+  if (String(e.parameter.key || &#x27;&#x27;) !== ADMIN_KEY) return json({ok:false,error:&#x27;Unauthorized&#x27;});
+  const sh = getSheet();
+  const values = sh.getDataRange().getValues();
+  const entries = values.slice(1).filter(r =&gt; r[0]).map(r =&gt; ({
+    id:r[0], createdAt:r[1], name:r[2], attendance:r[3],
+    guests:r[4], phone:r[5], comment:r[6]
+  })).reverse();
+  return json({ok:true, entries});
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents || &#x27;{}&#x27;);
+    const x = body.entry || {};
+    if (body.action !== &#x27;submit&#x27; || !x.name || ![&#x27;yes&#x27;,&#x27;no&#x27;].includes(x.attendance)) {
+      return json({ok:false,error:&#x27;Validation error&#x27;});
+    }
+    getSheet().appendRow([
+      String(x.id || Utilities.getUuid()),
+      String(x.createdAt || new Date().toISOString()),
+      String(x.name).slice(0,80),
+      x.attendance,
+      x.attendance === &#x27;yes&#x27; ? Number(x.guests || 1) : 0,
+      String(x.phone || &#x27;&#x27;).slice(0,30),
+      String(x.comment || &#x27;&#x27;).slice(0,300)
+    ]);
+    return json({ok:true});
+  } catch (err) {
+    return json({ok:false,error:String(err)});
+  }
+}
+
+function getSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(SHEET_NAME);
+  if (sh.getLastRow() === 0) sh.appendRow([&#x27;id&#x27;,&#x27;createdAt&#x27;,&#x27;name&#x27;,&#x27;attendance&#x27;,&#x27;guests&#x27;,&#x27;phone&#x27;,&#x27;comment&#x27;]);
+  return sh;
+}
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}</pre>
+<h2>2. Публикация</h2><ol><li><b>Deploy → New deployment → Web app</b>.</li><li>Execute as: <b>Me</b>.</li><li>Who has access: <b>Anyone</b>.</li><li>Скопируйте URL, заканчивающийся на <code>/exec</code>.</li></ol>
+<h2>3. Подключение</h2><p><b>В этой версии сайт уже подключён к Google Apps Script.</b></p><p>Web App URL: <code>https://script.google.com/macros/s/AKfycbyjIPnZtxYflWP0cpAZXhdiKssa1octhHGKxZuhWR-aOjwkT8cB3AwGFHN0lVDo4aBT/exec</code></p><p>Важно: в настройках развертывания Apps Script доступ должен быть установлен как <b>Anyone / Все</b>.</p>
+<div class="box">PIN админки по умолчанию: <b>8080</b>. Для семейного сайта этого достаточно как лёгкого ограничения доступа, но это не полноценная серверная авторизация.</div>
+</main></body></html>
