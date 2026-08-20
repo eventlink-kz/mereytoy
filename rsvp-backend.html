@@ -1,57 +1,110 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Подключение RSVP</title><style>body{margin:0;background:#eee7da;color:#30372f;font-family:Arial,sans-serif}main{max-width:900px;margin:auto;padding:32px 18px 60px}
-h1,h2{color:#79541f}.box{background:#fffaf1;border:1px solid #ddc9a7;padding:18px;margin:15px 0;line-height:1.45}pre{white-space:pre-wrap;word-break:break-word;background:#24211d;color:#f7eee0;padding:16px;overflow:auto;font-size:13px;line-height:1.45}
-code{background:#eee3d1;padding:2px 4px}li{margin:8px 0;line-height:1.45}</style></head><body><main>
-<h1>RSVP — подключение общей базы</h1><div class="box">Сайт уже работает локально. Чтобы ответы со всех телефонов попадали в одну админку, подключите бесплатную Google Таблицу через Apps Script.</div>
-<h2>1. Google Таблица</h2><ol><li>Создайте пустую Google Таблицу.</li><li>Откройте <b>Расширения → Apps Script</b>.</li><li>Вставьте код:</li></ol>
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RSVP — подключение Google Sheets</title>
+<style>body{max-width:900px;margin:40px auto;padding:0 18px;font:16px/1.55 system-ui,sans-serif;color:#2e332d}code,pre{background:#f5f1e9}pre{padding:16px;overflow:auto;white-space:pre-wrap;border:1px solid #ddd0b7}.box{padding:14px;border:1px solid #d1b27a;background:#fff9ec;margin:16px 0}h1,h2{color:#775421}</style>
+</head><body>
+<h1>RSVP · Google Sheets</h1>
+<div class="box"><b>Почему сейчас не работает:</b> текущий Web App URL перенаправляет незалогиненного пользователя на вход Google. Для гостей доступ должен быть <b>Anyone / Все</b>.</div>
+<h2>1. Заменить код Apps Script</h2>
+<p>В Google Таблице: <b>Расширения → Apps Script → Код.gs</b>. Удалите старый код и вставьте содержимое файла <b>Code.gs</b> из этого ZIP.</p>
 <pre>const SHEET_NAME = &#x27;RSVP&#x27;;
 const ADMIN_KEY = &#x27;8080&#x27;;
 
 function doGet(e) {
-  if (String(e.parameter.action || &#x27;&#x27;) !== &#x27;list&#x27;) return json({ok:false,error:&#x27;Unknown action&#x27;});
-  if (String(e.parameter.key || &#x27;&#x27;) !== ADMIN_KEY) return json({ok:false,error:&#x27;Unauthorized&#x27;});
-  const sh = getSheet();
-  const values = sh.getDataRange().getValues();
-  const entries = values.slice(1).filter(r =&gt; r[0]).map(r =&gt; ({
-    id:r[0], createdAt:r[1], name:r[2], attendance:r[3],
-    guests:r[4], phone:r[5], comment:r[6]
-  })).reverse();
-  return json({ok:true, entries});
+  const action = String((e &amp;&amp; e.parameter &amp;&amp; e.parameter.action) || &#x27;&#x27;);
+  const callback = String((e &amp;&amp; e.parameter &amp;&amp; e.parameter.callback) || &#x27;&#x27;);
+
+  if (action === &#x27;ping&#x27;) {
+    return output({ ok: true }, callback);
+  }
+
+  if (action === &#x27;list&#x27;) {
+    if (String(e.parameter.key || &#x27;&#x27;) !== ADMIN_KEY) {
+      return output({ ok: false, error: &#x27;Unauthorized&#x27; }, callback);
+    }
+
+    const sh = getSheet();
+    const values = sh.getDataRange().getValues();
+
+    const entries = values.slice(1)
+      .filter(r =&gt; r[0])
+      .map(r =&gt; ({
+        id: String(r[0] || &#x27;&#x27;),
+        createdAt: String(r[1] || &#x27;&#x27;),
+        name: String(r[2] || &#x27;&#x27;),
+        attendance: String(r[3] || &#x27;&#x27;),
+        guests: Number(r[4] || 0),
+        phone: String(r[5] || &#x27;&#x27;),
+        comment: String(r[6] || &#x27;&#x27;)
+      }))
+      .reverse();
+
+    return output({ ok: true, entries: entries }, callback);
+  }
+
+  return output({ ok: false, error: &#x27;Unknown action&#x27; }, callback);
 }
 
 function doPost(e) {
   try {
-    const body = JSON.parse(e.postData.contents || &#x27;{}&#x27;);
+    const body = JSON.parse((e &amp;&amp; e.postData &amp;&amp; e.postData.contents) || &#x27;{}&#x27;);
     const x = body.entry || {};
-    if (body.action !== &#x27;submit&#x27; || !x.name || ![&#x27;yes&#x27;,&#x27;no&#x27;].includes(x.attendance)) {
-      return json({ok:false,error:&#x27;Validation error&#x27;});
+
+    if (body.action !== &#x27;submit&#x27; || !x.name || ![&#x27;yes&#x27;, &#x27;no&#x27;].includes(x.attendance)) {
+      return output({ ok: false, error: &#x27;Validation error&#x27; });
     }
+
     getSheet().appendRow([
-      String(x.id || Utilities.getUuid()),
-      String(x.createdAt || new Date().toISOString()),
-      String(x.name).slice(0,80),
+      safeCell(String(x.id || Utilities.getUuid())),
+      safeCell(String(x.createdAt || new Date().toISOString())),
+      safeCell(String(x.name).slice(0, 80)),
       x.attendance,
-      x.attendance === &#x27;yes&#x27; ? Number(x.guests || 1) : 0,
-      String(x.phone || &#x27;&#x27;).slice(0,30),
-      String(x.comment || &#x27;&#x27;).slice(0,300)
+      x.attendance === &#x27;yes&#x27; ? Math.max(1, Math.min(20, Number(x.guests || 1))) : 0,
+      safeCell(String(x.phone || &#x27;&#x27;).slice(0, 30)),
+      safeCell(String(x.comment || &#x27;&#x27;).slice(0, 300))
     ]);
-    return json({ok:true});
+
+    return output({ ok: true });
   } catch (err) {
-    return json({ok:false,error:String(err)});
+    return output({ ok: false, error: String(err) });
   }
 }
 
 function getSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error(&#x27;Spreadsheet not found. Open Apps Script from Extensions &gt; Apps Script inside the RSVP Google Sheet.&#x27;);
+
   let sh = ss.getSheetByName(SHEET_NAME);
   if (!sh) sh = ss.insertSheet(SHEET_NAME);
-  if (sh.getLastRow() === 0) sh.appendRow([&#x27;id&#x27;,&#x27;createdAt&#x27;,&#x27;name&#x27;,&#x27;attendance&#x27;,&#x27;guests&#x27;,&#x27;phone&#x27;,&#x27;comment&#x27;]);
+
+  if (sh.getLastRow() === 0) {
+    sh.appendRow([&#x27;id&#x27;, &#x27;createdAt&#x27;, &#x27;name&#x27;, &#x27;attendance&#x27;, &#x27;guests&#x27;, &#x27;phone&#x27;, &#x27;comment&#x27;]);
+    sh.setFrozenRows(1);
+  }
   return sh;
 }
-function json(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+
+function safeCell(value) {
+  return /^[=+\-@]/.test(value) ? &quot;&#x27;&quot; + value : value;
+}
+
+function output(obj, callback) {
+  const json = JSON.stringify(obj);
+  if (callback &amp;&amp; /^[A-Za-z_$][0-9A-Za-z_$]*$/.test(callback)) {
+    return ContentService
+      .createTextOutput(callback + &#x27;(&#x27; + json + &#x27;);&#x27;)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService
+    .createTextOutput(json)
+    .setMimeType(ContentService.MimeType.JSON);
 }</pre>
-<h2>2. Публикация</h2><ol><li><b>Deploy → New deployment → Web app</b>.</li><li>Execute as: <b>Me</b>.</li><li>Who has access: <b>Anyone</b>.</li><li>Скопируйте URL, заканчивающийся на <code>/exec</code>.</li></ol>
-<h2>3. Подключение</h2><p><b>В этой версии сайт уже подключён к Google Apps Script.</b></p><p>Web App URL: <code>https://script.google.com/macros/s/AKfycbyjIPnZtxYflWP0cpAZXhdiKssa1octhHGKxZuhWR-aOjwkT8cB3AwGFHN0lVDo4aBT/exec</code></p><p>Важно: в настройках развертывания Apps Script доступ должен быть установлен как <b>Anyone / Все</b>.</p>
-<div class="box">PIN админки по умолчанию: <b>8080</b>. Для семейного сайта этого достаточно как лёгкого ограничения доступа, но это не полноценная серверная авторизация.</div>
-</main></body></html>
+<h2>2. Обновить развертывание</h2>
+<p><b>Начать развертывание → Управление развертываниями → ✏️</b>. Выберите <b>Новая версия</b>, «Выполнять от имени: Я», «У кого есть доступ: <b>Все / Anyone</b>», затем <b>Развернуть</b>.</p>
+<p>Если вы редактируете существующее развертывание, URL обычно остаётся тем же:</p>
+<pre>https://script.google.com/macros/s/AKfycbyjIPnZtxYflWP0cpAZXhdiKssa1octhHGKxZuhWR-aOjwkT8cB3AwGFHN0lVDo4aBT/exec</pre>
+<h2>3. Проверка</h2>
+<p>Откройте URL выше в режиме инкогнито, добавив в конец <code>?action=ping&amp;callback=test</code>. Если всё настроено правильно, браузер покажет:</p>
+<pre>test({"ok":true});</pre>
+<p>После этого форма на <b>index.html</b> отправляет ответы в Google Sheets, а <b>admin.html</b> загружает их из общей базы. PIN админки: <b>8080</b>.</p>
+</body></html>

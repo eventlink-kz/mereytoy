@@ -46,11 +46,26 @@ const API=RSVP_API_URL && !RSVP_API_URL.includes("PASTE_GOOGLE"); let entries=[]
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function localData(){try{return JSON.parse(localStorage.getItem("jubilee_rsvp_entries_v1")||"[]")}catch{return[]}}
+function jsonpRequest(params,timeoutMs=8000){
+ return new Promise((resolve,reject)=>{
+  const cb="__rsvp_admin_"+Date.now().toString(36)+Math.random().toString(36).slice(2),s=document.createElement("script"),u=new URL(RSVP_API_URL);
+  Object.entries(params||{}).forEach(([k,v])=>u.searchParams.set(k,String(v)));u.searchParams.set("callback",cb);
+  let done=false;const finish=()=>{if(done)return;done=true;clearTimeout(t);delete window[cb];s.remove()};
+  window[cb]=d=>{finish();resolve(d)};s.onerror=()=>{finish();reject(new Error("Не удалось подключиться к RSVP-базе."))};
+  const t=setTimeout(()=>{finish();reject(new Error("RSVP-база не отвечает. Проверьте доступ Apps Script: Anyone / Все."))},timeoutMs);
+  s.src=u.toString();document.head.appendChild(s);
+ })
+}
 async function load(){
- $("#modeNotice").textContent=API?"Подключена общая RSVP-база.":"Тестовый режим: видны ответы только из этого браузера.";
+ $("#modeNotice").textContent=API?"Подключение к общей RSVP-базе…":"Тестовый режим: видны ответы только из этого браузера.";
  $("#clearBtn").classList.toggle("hidden",API);
- if(API){const u=new URL(RSVP_API_URL);u.searchParams.set("action","list");u.searchParams.set("key",ADMIN_PIN);
- const r=await fetch(u),d=await r.json();if(!d.ok)throw new Error(d.error||"Ошибка");entries=d.entries||[]}else entries=localData();render()
+ if(API){
+   const d=await jsonpRequest({action:"list",key:ADMIN_PIN});
+   if(!d.ok)throw new Error(d.error||"Ошибка RSVP");
+   entries=d.entries||[];
+   $("#modeNotice").textContent="Общая RSVP-база подключена. Данные загружены из Google Sheets.";
+ }else entries=localData();
+ render()
 }
 function render(){
  const q=$("#search").value.trim().toLowerCase(), rows=entries.filter(e=>[e.name,e.phone,e.comment].some(v=>String(v||"").toLowerCase().includes(q)));
@@ -61,13 +76,13 @@ function render(){
  <td>${e.attendance==="yes"?esc(e.guests||1):"—"}</td><td>${esc(e.phone||"—")}</td><td>${esc(e.comment||"—")}</td></tr>`).join("");
  $("#empty").classList.toggle("hidden",rows.length!==0)
 }
-function login(){if($("#pin").value===ADMIN_PIN){sessionStorage.setItem("rsvp_admin","1");$("#login").classList.add("hidden");$("#app").classList.remove("hidden");load().catch(e=>alert(e.message))}
+function login(){if($("#pin").value===ADMIN_PIN){sessionStorage.setItem("rsvp_admin","1");$("#login").classList.add("hidden");$("#app").classList.remove("hidden");load().catch(e=>{$("#modeNotice").textContent=e.message;alert(e.message)})}
 else $("#loginErr").textContent="Неверный PIN."}
 $("#loginBtn").onclick=login;$("#pin").addEventListener("keydown",e=>{if(e.key==="Enter")login()});
-$("#logoutBtn").onclick=()=>{sessionStorage.removeItem("rsvp_admin");location.reload()};$("#refreshBtn").onclick=()=>load().catch(e=>alert(e.message));$("#search").oninput=render;
+$("#logoutBtn").onclick=()=>{sessionStorage.removeItem("rsvp_admin");location.reload()};$("#refreshBtn").onclick=()=>load().catch(e=>{$("#modeNotice").textContent=e.message;alert(e.message)});$("#search").oninput=render;
 $("#clearBtn").onclick=()=>{if(confirm("Удалить локальные тестовые ответы?")){localStorage.removeItem("jubilee_rsvp_entries_v1");load()}};
 $("#exportBtn").onclick=()=>{const rows=[["Дата","Имя","Статус","Гостей","Телефон","Комментарий"],...entries.map(e=>[e.createdAt,e.name,e.attendance==="yes"?"Придёт":"Не придёт",e.attendance==="yes"?e.guests:0,e.phone||"",e.comment||""])];
 const csv="\uFEFF"+rows.map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(";")).join("\r\n");
 const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="rsvp.csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
-if(sessionStorage.getItem("rsvp_admin")==="1"){$("#login").classList.add("hidden");$("#app").classList.remove("hidden");load().catch(e=>alert(e.message))}
+if(sessionStorage.getItem("rsvp_admin")==="1"){$("#login").classList.add("hidden");$("#app").classList.remove("hidden");load().catch(e=>{$("#modeNotice").textContent=e.message;alert(e.message)})}
 </script></body></html>
