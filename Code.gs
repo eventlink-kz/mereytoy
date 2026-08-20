@@ -2,81 +2,93 @@ const SHEET_NAME = 'RSVP';
 const ADMIN_KEY = '8080';
 
 function doGet(e) {
-  const p = (e && e.parameter) || {};
-  const action = String(p.action || '');
-  const callback = String(p.callback || '');
+  try {
+    const p = (e && e.parameter) || {};
+    const action = String(p.action || '');
+    const callback = String(p.callback || '');
 
-  if (action === 'ping') {
-    return output({ ok: true, service: 'rsvp', time: new Date().toISOString() }, callback);
-  }
-
-  if (action === 'check') {
-    const id = String(p.id || '');
-    if (!id) return output({ ok: false, found: false, error: 'Missing id' }, callback);
-    return output({ ok: true, found: hasId(id) }, callback);
-  }
-
-  if (action === 'list') {
-    if (String(p.key || '') !== ADMIN_KEY) {
-      return output({ ok: false, error: 'Unauthorized' }, callback);
+    if (action === 'ping') {
+      return output({ ok: true, service: 'rsvp', time: new Date().toISOString() }, callback);
     }
-    const sh = getSheet();
-    const values = sh.getDataRange().getValues();
-    const entries = values.slice(1).filter(r => r[0]).map(r => ({
-      id: String(r[0] || ''),
-      createdAt: String(r[1] || ''),
-      name: String(r[2] || ''),
-      attendance: String(r[3] || ''),
-      guests: Number(r[4] || 0),
-      phone: String(r[5] || ''),
-      comment: String(r[6] || '')
-    })).reverse();
-    return output({ ok: true, entries: entries }, callback);
-  }
 
-  return output({ ok: false, error: 'Unknown action' }, callback);
+    if (action === 'submit') {
+      const entry = normalizeEntry(p);
+      if (!entry.name || !['yes', 'no'].includes(entry.attendance)) {
+        return output({ ok: false, error: 'Validation error' }, callback);
+      }
+
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        if (!hasId(entry.id)) {
+          getSheet().appendRow([
+            safeCell(entry.id),
+            safeCell(entry.createdAt),
+            safeCell(entry.name),
+            entry.attendance,
+            entry.guests,
+            safeCell(entry.phone),
+            safeCell(entry.comment)
+          ]);
+        }
+      } finally {
+        lock.releaseLock();
+      }
+
+      return output({ ok: true, id: entry.id }, callback);
+    }
+
+    if (action === 'check') {
+      const id = String(p.id || '');
+      return output({ ok: true, found: !!id && hasId(id) }, callback);
+    }
+
+    if (action === 'list') {
+      if (String(p.key || '') !== ADMIN_KEY) {
+        return output({ ok: false, error: 'Unauthorized' }, callback);
+      }
+
+      const sh = getSheet();
+      const values = sh.getDataRange().getValues();
+      const entries = values.slice(1).filter(r => r[0]).map(r => ({
+        id: String(r[0] || ''),
+        createdAt: String(r[1] || ''),
+        name: String(r[2] || ''),
+        attendance: String(r[3] || ''),
+        guests: Number(r[4] || 0),
+        phone: String(r[5] || ''),
+        comment: String(r[6] || '')
+      })).reverse();
+
+      return output({ ok: true, entries: entries }, callback);
+    }
+
+    return output({ ok: false, error: 'Unknown action' }, callback);
+  } catch (err) {
+    return output({ ok: false, error: String(err) }, (e && e.parameter && e.parameter.callback) || '');
+  }
 }
 
 function doPost(e) {
   try {
-    let body = {};
-    if (e && e.parameter && Object.keys(e.parameter).length) {
-      body = e.parameter;
-    } else if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents || '{}');
-      if (body.entry) body = Object.assign({ action: body.action }, body.entry);
+    const p = (e && e.parameter) || {};
+    p.action = p.action || 'submit';
+    const entry = normalizeEntry(p);
+
+    if (String(p.action) !== 'submit' || !entry.name || !['yes', 'no'].includes(entry.attendance)) {
+      return output({ ok: false, error: 'Validation error' }, '');
     }
 
-    if (String(body.action || '') !== 'submit') {
-      return output({ ok: false, error: 'Unknown action' });
+    if (!hasId(entry.id)) {
+      getSheet().appendRow([
+        safeCell(entry.id), safeCell(entry.createdAt), safeCell(entry.name),
+        entry.attendance, entry.guests, safeCell(entry.phone), safeCell(entry.comment)
+      ]);
     }
 
-    const entry = normalizeEntry(body);
-    if (!entry.name || !['yes', 'no'].includes(entry.attendance)) {
-      return output({ ok: false, error: 'Validation error' });
-    }
-
-    const lock = LockService.getScriptLock();
-    lock.waitLock(10000);
-    try {
-      if (!hasId(entry.id)) {
-        getSheet().appendRow([
-          safeCell(entry.id),
-          safeCell(entry.createdAt),
-          safeCell(entry.name),
-          entry.attendance,
-          entry.guests,
-          safeCell(entry.phone),
-          safeCell(entry.comment)
-        ]);
-      }
-    } finally {
-      lock.releaseLock();
-    }
-
-    return output({ ok: true, id: entry.id });
+    return output({ ok: true, id: entry.id }, '');
   } catch (err) {
-    return output({ ok: false, error: String(err) });
+    return output({ ok: false, error: String(err) }, '');
   }
 }
 
@@ -103,9 +115,10 @@ function hasId(id) {
 
 function getSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw new Error('Spreadsheet not found. Open Apps Script from Extensions > Apps Script inside the RSVP Google Sheet.');
+  if (!ss) throw new Error('Spreadsheet not found. Open Apps Script from the RSVP Google Sheet.');
   let sh = ss.getSheetByName(SHEET_NAME);
   if (!sh) sh = ss.insertSheet(SHEET_NAME);
+
   if (sh.getLastRow() === 0) {
     sh.appendRow(['id', 'createdAt', 'name', 'attendance', 'guests', 'phone', 'comment']);
     sh.setFrozenRows(1);
