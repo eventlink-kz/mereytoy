@@ -1,0 +1,21 @@
+RSVP — подключение Google Sheets
+
+1) Откройте таблицу 80 JAS RSVP.
+2) Расширения → Apps Script.
+3) Полностью замените код на содержимое файла Code.gs.
+4) Сохраните.
+5) Развернуть → Управление развертываниями → карандаш.
+6) Выберите «Новая версия».
+7) Выполнять от имени: Я.
+8) У кого есть доступ: Все (Anyone). Важно: не «Anyone with Google account».
+9) Развернуть.
+10) Проверьте ссылку /exec в режиме инкогнито. Она НЕ должна просить вход в Google.
+
+Проверка:
+Откройте:
+https://script.google.com/macros/s/AKfycbyjIPnZtxYflWP0cpAZXhdiKssa1octhHGKxZuhWR-aOjwkT8cB3AwGFHN0lVDo4aBT/exec?action=ping
+
+Ожидаемый результат: JSON с "ok":true.
+
+После этого загрузите index.html и admin.html на GitHub Pages.
+PIN админки: 8080.
